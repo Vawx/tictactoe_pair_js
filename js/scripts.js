@@ -1,6 +1,6 @@
-function Game () {
+function Game ( ) {
   this.board = new Board();
-  this.players = [new Player("X"), new Player("O")];
+  this.players = [new Player("X", false), new Player("O", false)];
 }
 
 Game.prototype.gameOver = function () {
@@ -127,8 +127,9 @@ Board.prototype.spacesMarkedBy = function (player) {
   return markedSpaces;
 };
 
-function Player(mark) {
+function Player(mark, computer) {
   this.mark = mark;
+  this.computer = computer;
 }
 
 function Space(xCoordinate, yCoordinate, optionalMark) {
@@ -142,64 +143,198 @@ Space.prototype.markedBy = function(player) {
   if (player) {
     this.markedBy = player;
   }
-  return this.markedBy;
+  return undefined;
 };
 
 var toggleCurrentPlayer = function(currentPlayerNumber) {
-  if (currentPlayerNumber === 0) {
-    return 1;
-  } else {
-    return 0;
-  }
+  return( currentPlayerNumber === 0 ) ? 1 : 0;
 };
 
 $(function() {
-  game = new Game();
-  players = game.players;
-  board = game.board;
-  spaces = board.spaces;
+  var currentPlayerNumber;
+  var currentPlayer;
+  var playCount;
+  var used;
+
+  beginGame( );
 
   // Generate Game Board
   $gameBoard = $('#game-board');
   spaces.forEach(function(space) {
-    $gameBoard.append('<div class="unmarked space" id="' + space.coordinates + '"></div>')
+    $gameBoard.append('<div class="unmarked space" id="' + space.coordinates + '" name="'+ space.coordinates +'"></div>')
   });
 
-  // Start Game
-  var currentPlayerNumber = 0;
-  var currentPlayer = players[currentPlayerNumber];
-  var playCount = 0;
+  $("#start-over").on("click", function( ) {
+    for( var i = 0; i < spaces.length; i++ )
+    {
+      var spaceID = spaces[i].coordinates[0].toString( ) + "," + spaces[i].coordinates[1].toString( );
+      var space = $('[name="' + spaceID + '"]');
+      space.text("");
+      space.removeClass('space');
+      space.addClass('unmarked space');
+      space.bind('click');
+    }
+    $gameBoard.fadeTo('fast', 1.0);
+    beginGame( );
+  });
 
   // When a space is clicked
   $('.unmarked').click(function() {
-    // Make space unclickable in the future
     $(this).removeClass('unmarked');
-    $(this).unbind('click');
 
-    // Get id of the space that was clicked
-    spaceID = this.id.split(',')
-    for(var i = 0; i < spaceID.length; i++) { spaceID[i] = parseInt(spaceID[i]); }
+    if ( $(this).text( ).length <= 0 )
+    {
+      var gameOver = false;
+      // Get id of the space that was clicked
+      spaceID = this.id.split(',')
+      for(var i = 0; i < spaceID.length; i++) { spaceID[i] = parseInt(spaceID[i]); }
 
-    // Mark that space as clicked by the current player
-    board.find(spaceID[0], spaceID[1]).markedBy(currentPlayer);
-    $(this).text(currentPlayer.mark)
+      // Mark that space as clicked by the current player
+      var x = spaceID[0];
+      var y = spaceID[1];
+      used.push( [x,y,currentPlayer.mark] );
+      board.find(spaceID[0], spaceID[1]).markedBy(currentPlayer);
+      $(this).text(currentPlayer.mark)
+
+      // Determine if it's GameOver and report winner if so
+      if (game.gameOver()) {
+        gameOver = true;
+        $gameBoard.fadeTo('slow', 0.7);
+        $('#game-status').append('<h1>' + currentPlayer.mark + ' Won!</h1>');
+        $('.unmarked').removeClass('unmarked');
+      } else if (playCount === 8) {
+        $gameBoard.fadeTo('slow', 0.7);
+        $('#game-status').append("<h1>Game Over. It's a tie!</h1>");
+        $('.unmarked').removeClass('unmarked');
+      }
+
+      // Toggle the current player and playcount
+      currentPlayerNumber = toggleCurrentPlayer(currentPlayerNumber);
+      currentPlayer = players[currentPlayerNumber];
+      playCount += 1;
+
+      if( currentPlayer.computer && !gameOver )
+      {
+        computerMove( currentPlayer );
+        // Toggle the current player and playcount
+        currentPlayerNumber = toggleCurrentPlayer(currentPlayerNumber);
+        currentPlayer = players[currentPlayerNumber];
+        playCount += 1;
+      }
+    }
+  });
+
+  $("#computer").on("click", function( ) {
+    game.players[1].computer = $("#computer").is(":checked");
+  });
+
+  function beginGame( )
+  {
+    game = new Game();
+    players = game.players;
+    board = game.board;
+    spaces = board.spaces;
+    used = [];
+
+    $('#game-status').empty( );
+    players[1].computer = $("#computer").is(":checked");
+
+    // Start Game
+    currentPlayerNumber = 0;
+    currentPlayer = players[currentPlayerNumber];
+    playCount = 0;
+  }
+
+
+  function computerMove( currentPlayer )
+  {
+    var strongMove = findStrongMove( );
+    var randomAvailableSpace = ( strongMove === false ) ? findRandomSpace( ) : strongMove;
+
+    var x = randomAvailableSpace.coordinates[0];
+    var y = randomAvailableSpace.coordinates[1];
+    used.push( [x,y,currentPlayer.mark] );
+
+    var spaceID = randomAvailableSpace.coordinates[ 0 ].toString( ) + "," + randomAvailableSpace.coordinates[ 1 ].toString( );
+    var space = $('[name="' + spaceID + '"]');
+
+    space.removeClass('unmarked');
+
+    randomAvailableSpace.markedBy( currentPlayer );
+    space.text(currentPlayer.mark)
 
     // Determine if it's GameOver and report winner if so
     if (game.gameOver()) {
       $gameBoard.fadeTo('slow', 0.7);
       $('#game-status').append('<h1>' + currentPlayer.mark + ' Won!</h1>');
-      $('.unmarked').unbind('click');
       $('.unmarked').removeClass('unmarked');
     } else if (playCount === 8) {
       $gameBoard.fadeTo('slow', 0.7);
       $('#game-status').append("<h1>Game Over. It's a tie!</h1>");
-      $('.unmarked').unbind('click');
       $('.unmarked').removeClass('unmarked');
     }
+  }
 
-    // Toggle the current player and playcount
-    currentPlayerNumber = toggleCurrentPlayer(currentPlayerNumber);
-    currentPlayer = players[currentPlayerNumber];
-    playCount += 1;
-  });
+  function findStrongMove( )
+  {
+    var pairs = [ [[0,0],[1,1],[2,2]], [[0,2],[1,1],[2,0]], [[0,0],[0,1],[0,2]], [[1,0],[1,1],[1,2]], [[2,0],[2,1],[2,2]], [[0,0],[1,0],[2,0]], [[0,1],[1,1],[2,2]], [[0,3],[1,3],[3,3]] ];
+
+    for( var i = 0; i < pairs.length; i++ )
+    {
+      var pairCount = 0;
+      for( var j = 0; j < pairs[i].length; j++ )
+      {
+        if( $('[name="' + pairs[i][j].toString( ) + '"]').text( ) === "X" )
+        {
+          pairCount += 1;
+        }
+
+        if( pairCount === 2 )
+        {
+          return findEmptyInThree( pairs[i] );
+        }
+      }
+    }
+
+    return false;
+  }
+
+  function isUsed( x, y )
+  {
+    for( var i = 0; i < used.length; i++ )
+    {
+      if( used[i][0] === x && used[i][1] === y )
+      {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function findEmptyInThree( three )
+  {
+    for( var i = 0; i < three.length; i++ )
+    {
+      if( $('[name="' + three[i][0].toString( ) + "," + three[i][1].toString( ) + '"]').text( ) === "" )
+      {
+        return board.find( three[i][0], three[i][1] );
+      }
+    }
+
+    return findRandomSpace( );
+  }
+
+  function findRandomSpace( )
+  {
+    var available = [];
+    for( var i = 0; i < spaces.length; i++ )
+    {
+      if ( spaces[ i ].markedBy.mark === undefined )
+      {
+        available.push( spaces[ i ] );
+      }
+    }
+    return available[ Math.floor( Math.random( ) * available.length ) ];
+  }
+
 });
